@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PCM シミュレータ — 音を 0 と 1 に変える</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap">
+<style>
+  :root {
+    --primary: #1F8A3B; --accent: #00C896; --accent-dark: #0E8F6E; --fg: #1A1A2E; --muted: #6B7280;
+    --bg: #F7FAF8; --card: #FFFFFF; --border: #E5E7EB; --primary-tint: #E7F3EB; --accent-tint: #E0F7F1;
+    --amber: #B45309; --amber-tint: #FFF3CD; --gray-tint: #F3F4F6; --danger: #C2410C;
+    --font-jp: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
+    --font-num: "Space Grotesk", "Inter", "Helvetica Neue", Arial, sans-serif;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-jp); font-size: 15px; line-height: 1.7; -webkit-font-smoothing: antialiased; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 24px 20px 56px; }
+  header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; border-bottom: 3px solid var(--primary); padding-bottom: 14px; margin-bottom: 26px; }
+  .eyebrow { font-family: var(--font-num); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--primary); font-weight: 700; }
+  header.top h1 { font-size: clamp(22px, 3vw, 30px); margin: 0; text-wrap: balance; }
+  header.top p { margin: 0; color: var(--muted); font-size: 14px; }
+  .flow { display: grid; gap: 26px; }
+  section.step { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 20px 22px 22px; }
+  section.step > h2 { display: flex; align-items: center; gap: 12px; font-size: 18px; margin: 0 0 6px; }
+  .num { font-family: var(--font-num); font-weight: 700; font-size: 13px; letter-spacing: .06em; color: var(--card); background: var(--primary); border-radius: 4px; padding: 2px 9px; }
+  .lead { color: var(--muted); margin: 0 0 16px; font-size: 14px; }
+  .btn { font: 500 14px var(--font-jp); padding: 9px 16px; border-radius: 4px; border: 1.5px solid var(--primary); background: var(--primary); color: var(--card); cursor: pointer; }
+  .btn.secondary { background: var(--card); color: var(--primary); }
+  .locked-note { color: var(--accent-dark); font-weight: 500; }
+
+  /* 予想 */
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-weight: 500; margin-bottom: 6px; }
+  .radio { display: flex; gap: 14px; flex-wrap: wrap; }
+  .radio label { display: inline-flex; align-items: center; gap: 6px; font-weight: 400; margin: 0; cursor: pointer; }
+  .predict-actions { margin-top: 6px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+  /* 動かす */
+  .sim-grid { display: grid; grid-template-columns: 1fr 300px; gap: 22px 32px; align-items: start; }
+  @media (max-width: 900px) { .sim-grid { grid-template-columns: 1fr; } }
+  canvas.wave { width: 100%; height: auto; display: block; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; color: var(--muted); }
+  .legend i { display: inline-block; width: 18px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+  .controls { display: grid; gap: 16px; }
+  .ctl label { display: flex; justify-content: space-between; font-weight: 500; margin-bottom: 4px; }
+  .ctl label b { font-family: var(--font-num); color: var(--primary); }
+  .ctl input[type="range"] { width: 100%; accent-color: var(--primary); }
+  .ctl .hint { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .seg { display: flex; gap: 8px; }
+  .seg button { flex: 1; font: 500 13px var(--font-jp); padding: 7px 4px; border-radius: 4px; border: 1.5px solid var(--border); background: var(--card); color: var(--fg); cursor: pointer; }
+  .seg button.on { border-color: var(--primary); background: var(--primary-tint); color: var(--primary); font-weight: 700; }
+  .readouts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .tile { background: var(--primary-tint); border-radius: 6px; padding: 10px 12px 8px; }
+  .tile .k { font-size: 12px; color: var(--muted); }
+  .tile .v { font: 700 24px var(--font-num); line-height: 1.25; }
+  .tile .v small { font-size: 13px; font-weight: 500; }
+  .tile.warn { background: var(--amber-tint); }
+  .tile.warn .v { color: var(--amber); }
+  .state-note { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
+  .state-note.bad { color: var(--danger); font-weight: 500; }
+  .state-note.good { color: var(--accent-dark); font-weight: 500; }
+
+  /* チェック */
+  .checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .check { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; }
+  .check .box { width: 24px; height: 24px; border: 2px solid var(--border); border-radius: 4px; display: grid; place-items: center; font: 700 14px var(--font-num); color: var(--card); margin-top: 3px; }
+  .check.done { border-color: var(--primary); background: var(--primary-tint); }
+  .check.done .box { background: var(--primary); border-color: var(--primary); }
+  .check .t { font-weight: 500; }
+  .check .fb { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .check.done .fb { color: var(--fg); }
+  .progress { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; }
+  .bar { flex: 1; height: 8px; background: var(--gray-tint); border-radius: 999px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0%; background: var(--primary); transition: width .3s; }
+  .progress b { font-family: var(--font-num); font-size: 15px; }
+  .bitrate-quiz { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+  .bitrate-quiz input { width: 110px; font: 700 16px var(--font-num); padding: 6px 10px; border: 1.5px solid var(--border); border-radius: 4px; }
+  .bitrate-quiz .ok { color: var(--accent-dark); font-weight: 700; }
+  .bitrate-quiz .ng { color: var(--danger); font-weight: 500; }
+
+  /* ずれ */
+  table.gap { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.gap th, table.gap td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.gap th { font-weight: 500; color: var(--muted); font-size: 12px; letter-spacing: .04em; }
+  table.gap td.n { font-family: var(--font-num); font-weight: 700; }
+  textarea { width: 100%; min-height: 84px; font: 400 15px var(--font-jp); padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 4px; background: var(--card); color: var(--fg); resize: vertical; }
+  .note-label { display: block; font-weight: 500; margin: 16px 0 6px; }
+  .actions { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; }
+  footer.model { margin-top: 26px; font-size: 12.5px; color: var(--muted); line-height: 1.8; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  @media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <span class="eyebrow">第二級デジタル通信 / 伝送理論 — 通信の原理</span>
+    <h1>PCM シミュレータ</h1>
+    <p>音の波を「とびとびに測る → 段階に丸める → 0 と 1 にする」。測る回数と段階数を変えて、何が起きるか見る</p>
+  </header>
+
+  <div class="flow">
+
+    <!-- S -->
+    <section class="step" id="predict" aria-labelledby="h-predict">
+      <h2 id="h-predict"><span class="num">S</span>まず予想する（動かす前に書く）</h2>
+      <p class="lead">下の 3 つを予想してから動かす。外れてもよい。ずれたところが今日の学びどころ。</p>
+      <div class="field">
+        <label id="l-p1">予想 1: 音楽 CD は 1 秒間に何回、音の波形を測っている？</label>
+        <div class="radio" role="radiogroup" aria-labelledby="l-p1">
+          <label><input type="radio" name="p1" value="44"> 44 回</label>
+          <label><input type="radio" name="p1" value="44100"> 44,100 回</label>
+          <label><input type="radio" name="p1" value="44100000"> 44,100,000 回</label>
+        </div>
+      </div>
+      <div class="field">
+        <label id="l-p2">予想 2: 量子化 4 bit（4 桁の 2 進数）で表せる段階の数は？</label>
+        <div class="radio" role="radiogroup" aria-labelledby="l-p2">
+          <label><input type="radio" name="p2" value="4"> 4 段階</label>
+          <label><input type="radio" name="p2" value="8"> 8 段階</label>
+          <label><input type="radio" name="p2" value="16"> 16 段階</label>
+        </div>
+      </div>
+      <div class="field">
+        <label id="l-p3">予想 3: 測る回数（標本化周波数）が足りないと、何が起きる？</label>
+        <div class="radio" role="radiogroup" aria-labelledby="l-p3">
+          <label><input type="radio" name="p3" value="high"> 音が高くなる</label>
+          <label><input type="radio" name="p3" value="alias"> 元と違う「偽物の波」ができる</label>
+          <label><input type="radio" name="p3" value="none"> 何も起きない</label>
+        </div>
+      </div>
+      <div class="predict-actions">
+        <button class="btn" id="lock">予想を固定して動かす</button>
+        <button class="btn secondary" id="unlock" hidden>予想を直す</button>
+        <span class="locked-note" id="locked-note" hidden>予想を固定した。ここからは動かして確かめる番</span>
+      </div>
+    </section>
+
+    <!-- L -->
+    <section class="step" id="sim" aria-labelledby="h-sim">
+      <h2 id="h-sim"><span class="num">L</span>動かして、ずれに気づく</h2>
+      <p class="lead">緑の波が元の音（アナログ）。白い点が「測った値」、緑の階段が「丸めた値」。測る回数と段階数を変えてみる。</p>
+      <div class="sim-grid">
+        <div>
+          <canvas class="wave" id="cv" width="1440" height="560" role="img" aria-label="元の波形と標本化・量子化の結果を表示するグラフ"></canvas>
+          <div class="legend">
+            <span><i style="background:var(--primary)"></i>元の波（アナログ）</span>
+            <span><i style="background:#1A1A2E"></i>測った点（標本化）</span>
+            <span><i style="background:var(--accent-dark)"></i>丸めた階段（量子化）</span>
+            <span><i style="background:var(--danger)"></i>復元される偽物の波</span>
+          </div>
+        </div>
+        <div class="controls">
+          <div class="ctl">
+            <label for="fs">測る回数 fs（標本化周波数） <b id="fs-v"></b></label>
+            <input type="range" id="fs" min="4" max="64" step="1" value="32">
+            <div class="hint">元の波はこの窓に 4 周期 → 定理の境界は fs ＝ 8</div>
+          </div>
+          <div class="ctl">
+            <label for="nb">量子化ビット数 n <b id="nb-v"></b></label>
+            <input type="range" id="nb" min="1" max="4" step="1" value="3">
+            <div class="hint">段階数 ＝ 2 の n 乗（1 bit → 2 段階、4 bit → 16 段階）</div>
+          </div>
+          <div class="ctl">
+            <label>波形</label>
+            <div class="seg">
+              <button id="w-sine" class="on">正弦波</button>
+              <button id="w-voice">音声っぽい波</button>
+            </div>
+          </div>
+          <div class="readouts" aria-live="polite">
+            <div class="tile"><div class="k">ビットレート fs × n × 1ch</div><div class="v" id="r-rate">—</div></div>
+            <div class="tile" id="tile-nyq"><div class="k">標本化定理 fs ≥ 2f</div><div class="v" id="r-nyq">—</div></div>
+          </div>
+          <p class="state-note" id="state-note"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- O -->
+    <section class="step" id="check" aria-labelledby="h-check">
+      <h2 id="h-check"><span class="num">O</span>原理チェック — 自分で再現できたら印がつく</h2>
+      <p class="lead">説明を聞いて「わかった」つもりのことを、操作で再現する。4 つとも自力で出せたら、原理は自分のものになっている。</p>
+      <div class="progress"><div class="bar"><i id="bar"></i></div><b id="prog">0 / 4</b></div>
+      <ul class="checks">
+        <li class="check" id="c1"><div class="box" aria-hidden="true"></div><div><div class="t">fs を十分大きくして、階段が元の波にそっている状態を作る（fs ≥ 8）</div><div class="fb">やり方: fs のスライダーを右へ。定理の境界 8 以上にする</div></div></li>
+        <li class="check" id="c2"><div class="box" aria-hidden="true"></div><div><div class="t">fs を 8 より小さくして、偽物の波（エイリアシング）を出す</div><div class="fb">やり方: fs を 7 以下にして、赤い破線が元の波と違うことを見る</div></div></li>
+        <li class="check" id="c3"><div class="box" aria-hidden="true"></div><div><div class="t">量子化 1 bit と 4 bit を比べて、段階数 2 → 16 で階段がなめらかになることを見る</div><div class="fb">やり方: n を 1 → 4 と動かして階段の変化を見る</div></div></li>
+        <li class="check" id="c4"><div class="box" aria-hidden="true"></div><div><div class="t">ビットレートを自分で計算する: いまの fs と n から fs × n を求めて入力</div><div class="fb">やり方: 下の入力欄に計算結果を入れて「確かめる」</div>
+          <div class="bitrate-quiz">
+            <span>fs × n ＝ </span>
+            <input type="number" id="br-in" min="0" step="1" aria-label="ビットレートの計算結果">
+            <button class="btn secondary" id="br-go">確かめる</button>
+            <span id="br-msg"></span>
+          </div>
+        </div></li>
+      </ul>
+    </section>
+
+    <!-- W -->
+    <section class="step" id="gap" aria-labelledby="h-gap">
+      <h2 id="h-gap"><span class="num">W</span>予想とのずれを言葉にする</h2>
+      <p class="lead">ずれたことは間違いではない。意外だったところが、今日いちばん学べたところ。</p>
+      <table class="gap">
+        <thead><tr><th>項目</th><th>自分の予想</th><th>確かめた結果</th><th>ずれ</th></tr></thead>
+        <tbody>
+          <tr><td>CD が 1 秒に測る回数</td><td class="n" id="g1p">—</td><td class="n" id="g1s">44,100 回（44.1 kHz）</td><td id="g1d">—</td></tr>
+          <tr><td>4 bit の段階数</td><td class="n" id="g2p">—</td><td class="n" id="g2s">16 段階（2⁴）</td><td id="g2d">—</td></tr>
+          <tr><td>fs が足りないと</td><td class="n" id="g3p">—</td><td class="n" id="g3s">まだ確かめていない</td><td id="g3d">—</td></tr>
+        </tbody>
+      </table>
+      <label class="note-label" for="note">いちばん意外だったこと・まだモヤっとしていること（ワークシート ⑥ に写す）</label>
+      <textarea id="note" placeholder="例: 測る回数を半分にしただけで、まったく違う低い波に化けたのが意外だった"></textarea>
+      <div class="actions">
+        <button class="btn secondary" id="reset">記録をリセット</button>
+        <span class="visually-hidden" id="save-status" aria-live="polite"></span>
+      </div>
+    </section>
+  </div>
+
+  <footer class="model">
+    このシミュレータの中身: 学習用の単純化モデル。窓の中に 4 周期の波があるので、標本化定理の境界は fs ＝ 8（2 × 4）。
+    実物では電話が fs ＝ 8,000 回/秒・8 bit で 64 kbps、CD が fs ＝ 44,100 回/秒・16 bit・2 ch で約 1.4 Mbps。
+    偽物の波（エイリアシング）は、測った点をそのまま結ぶと元と違うゆっくりした波に見える現象のこと。
+  </footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem("pcmsim." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem("pcmsim." + k, JSON.stringify(v)); } catch { /* noop */ } },
+    clear() { try { Object.keys(localStorage).filter(k => k.startsWith("pcmsim.")).forEach(k => localStorage.removeItem(k)); } catch { /* noop */ } },
+  };
+  const S = {
+    locked: store.get("locked", false),
+    pred: store.get("pred", { p1: "", p2: "", p3: "" }),
+    checks: store.get("checks", { c1: false, c2: false, c3: false, c4: false }),
+    note: store.get("note", ""),
+  };
+  const F_CYCLES = 4;          // 窓内の周期数 → ナイキスト境界 fs = 8
+  const NYQUIST = 2 * F_CYCLES;
+  let fs = 32, nbits = 3, wave = "sine";
+  const seen = { ok: false, alias: false, qmin: 4, qmax: 1 };
+
+  // ── 波形モデル ──
+  function sig(t) { // t in [0,1]
+    const w = 2 * Math.PI * F_CYCLES;
+    if (wave === "sine") return Math.sin(w * t);
+    return 0.62 * Math.sin(w * t) + 0.27 * Math.sin(2 * w * t + 0.6) + 0.11 * Math.sin(3 * w * t + 1.9);
+  }
+  const sigMax = () => (wave === "sine" ? 1 : 1.0);
+
+  // ── 描画 ──
+  const cv = $("cv"), ctx = cv.getContext("2d");
+  function draw() {
+    const W = cv.width, H = cv.height, mid = H / 2, amp = H * 0.36;
+    ctx.clearRect(0, 0, W, H);
+    // グリッド（量子化レベル）
+    const M = Math.pow(2, nbits);
+    ctx.strokeStyle = "#EDF1EF"; ctx.lineWidth = 1;
+    for (let i = 0; i <= M; i++) {
+      const y = mid - amp * (i / M * 2 - 1) / sigMax();
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+    // ゼロ線
+    ctx.strokeStyle = "#D8DDD9"; ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(W, mid); ctx.stroke();
+    // 元の波
+    ctx.strokeStyle = "#1F8A3B"; ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    for (let x = 0; x <= W; x++) {
+      const y = mid - amp * sig(x / W) / sigMax();
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    // 標本化点
+    const pts = [];
+    for (let i = 0; i < fs; i++) {
+      const t = (i + 0.5) / fs;
+      pts.push({ x: t * W, v: sig(t) });
+    }
+    // エイリアシング: 点をそのまま結んだ復元波
+    if (fs < NYQUIST) {
+      ctx.strokeStyle = "#C2410C"; ctx.lineWidth = 3; ctx.setLineDash([10, 8]);
+      ctx.beginPath();
+      pts.forEach((p, i) => { const y = mid - amp * p.v / sigMax(); i === 0 ? ctx.moveTo(p.x, y) : ctx.lineTo(p.x, y); });
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+    // 量子化階段
+    const q = (v) => {
+      const u = (v / sigMax() + 1) / 2;               // 0..1
+      const k = Math.min(M - 1, Math.floor(u * M));   // 0..M-1
+      return ((k + 0.5) / M) * 2 - 1;                 // -1..1
+    };
+    ctx.strokeStyle = "#0E8F6E"; ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    let prevY = null;
+    for (let i = 0; i < fs; i++) {
+      const t0 = i / fs, t1 = (i + 1) / fs;
+      const y = mid - amp * q(sig((i + 0.5) / fs)) * sigMax() / sigMax();
+      if (i === 0) ctx.moveTo(t0 * W, y); else ctx.lineTo(t0 * W, y);
+      ctx.lineTo(t1 * W, y);
+      prevY = y;
+    }
+    ctx.stroke();
+    // 標本化点（最前面）
+    pts.forEach(p => {
+      const y = mid - amp * p.v / sigMax();
+      ctx.fillStyle = "#FFFFFF"; ctx.strokeStyle = "#1A1A2E"; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(p.x, y, 7, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+    });
+  }
+
+  // ── 状態表示 ──
+  function fmt(n) { return n.toLocaleString("ja-JP"); }
+  function update() {
+    draw();
+    $("fs-v").textContent = fs + " 回";
+    $("nb-v").textContent = nbits + " bit（" + Math.pow(2, nbits) + " 段階）";
+    $("r-rate").innerHTML = fmt(fs * nbits) + " <small>bit/秒</small>";
+    const ok = fs >= NYQUIST;
+    $("r-nyq").textContent = ok ? "OK" : "不足";
+    $("tile-nyq").classList.toggle("warn", !ok);
+    const note = $("state-note");
+    if (!ok) {
+      note.textContent = "fs が 2f（8）を下回っている。測った点を結ぶと、元と違うゆっくりした「偽物の波」ができる（エイリアシング）。";
+      note.className = "state-note bad";
+    } else if (fs <= NYQUIST + 2) {
+      note.textContent = "ちょうど境界のあたり。点の数が増えると、階段が元の波にそってくる。";
+      note.className = "state-note";
+    } else {
+      note.textContent = "fs は十分。あとは量子化ビット数 n を上げると、階段がもっとなめらかになる。";
+      note.className = "state-note good";
+    }
+    // 観測記録
+    if (ok) seen.ok = true; else seen.alias = true;
+    seen.qmin = Math.min(seen.qmin, nbits); seen.qmax = Math.max(seen.qmax, nbits);
+    evaluateChecks();
+  }
+
+  // ── 予想 UI ──
+  const radios = { p1: [...document.querySelectorAll('input[name="p1"]')], p2: [...document.querySelectorAll('input[name="p2"]')], p3: [...document.querySelectorAll('input[name="p3"]')] };
+  function readPred() {
+    for (const k of ["p1", "p2", "p3"]) S.pred[k] = (radios[k].find(r => r.checked) || {}).value || "";
+    store.set("pred", S.pred); renderGap();
+  }
+  function applyPredUI() {
+    for (const k of ["p1", "p2", "p3"]) radios[k].forEach(r => { r.checked = r.value === S.pred[k]; r.disabled = S.locked; });
+    $("lock").hidden = S.locked; $("unlock").hidden = !S.locked; $("locked-note").hidden = !S.locked;
+  }
+  $("lock").addEventListener("click", () => { readPred(); S.locked = true; store.set("locked", true); applyPredUI(); });
+  $("unlock").addEventListener("click", () => { S.locked = false; store.set("locked", false); applyPredUI(); });
+  Object.values(radios).flat().forEach(el => el.addEventListener("change", readPred));
+
+  // ── コントロール ──
+  $("fs").addEventListener("input", (e) => { fs = +e.target.value; update(); });
+  $("nb").addEventListener("input", (e) => { nbits = +e.target.value; update(); });
+  $("w-sine").addEventListener("click", () => { wave = "sine"; $("w-sine").classList.add("on"); $("w-voice").classList.remove("on"); update(); });
+  $("w-voice").addEventListener("click", () => { wave = "voice"; $("w-voice").classList.add("on"); $("w-sine").classList.remove("on"); update(); });
+
+  // ── チェック ──
+  const FB = {
+    c1: "再現できた。fs が 2f 以上なら、測った点から元の波を復元できる（標本化定理）。",
+    c2: "再現できた。fs が足りないと点がまばらになり、結ぶと元と違う低い波＝エイリアシング（折り返し雑音）になる。",
+    c3: "再現できた。段階数は 2 の n 乗。1 bit 増えるごとに段階は 2 倍、量子化雑音は小さくなる。",
+    c4: "正解。ビットレート ＝ fs × n × チャネル数。電話なら 8,000 × 8 × 1 ＝ 64,000 bit/秒 ＝ 64 kbps。",
+  };
+  function evaluateChecks() {
+    const c = S.checks;
+    if (!c.c1 && seen.ok) c.c1 = true;
+    if (!c.c2 && seen.alias) c.c2 = true;
+    if (!c.c3 && seen.qmin <= 1 && seen.qmax >= 4) c.c3 = true;
+    store.set("checks", c);
+    let n = 0;
+    for (const k of ["c1", "c2", "c3", "c4"]) {
+      const li = $(k), done = c[k];
+      li.classList.toggle("done", done);
+      li.querySelector(".box").textContent = done ? "✓" : "";
+      if (done) { li.querySelector(".fb").innerHTML = FB[k]; n++; }
+    }
+    $("prog").textContent = n + " / 4";
+    $("bar").style.width = (n / 4 * 100) + "%";
+    renderGap();
+  }
+  $("br-go").addEventListener("click", () => {
+    const v = +$("br-in").value;
+    const ans = fs * nbits;
+    const msg = $("br-msg");
+    if (v === ans) {
+      msg.textContent = "正解（" + fs + " × " + nbits + " ＝ " + ans + "）"; msg.className = "ok";
+      if (!S.checks.c4) { S.checks.c4 = true; evaluateChecks(); }
+    } else {
+      msg.textContent = "ちがう。いまの fs と n を見てもう一度"; msg.className = "ng";
+    }
+  });
+
+  // ── ずれ表 ──
+  function renderGap() {
+    const p = S.pred;
+    const label = { p1: { "44": "44 回", "44100": "44,100 回", "44100000": "44,100,000 回" }, p2: { "4": "4 段階", "8": "8 段階", "16": "16 段階" }, p3: { "high": "音が高くなる", "alias": "偽物の波ができる", "none": "何も起きない" } };
+    $("g1p").textContent = label.p1[p.p1] || "—";
+    $("g1d").textContent = !p.p1 ? "予想が未記入" : p.p1 === "44100" ? "予想どおり" : "ずれ: 正解は 44,100 回";
+    $("g2p").textContent = label.p2[p.p2] || "—";
+    $("g2d").textContent = !p.p2 ? "予想が未記入" : p.p2 === "16" ? "予想どおり" : "ずれ: 正解は 16 段階";
+    $("g3p").textContent = label.p3[p.p3] || "—";
+    if (S.checks.c2) {
+      $("g3s").textContent = "偽物の波ができた（エイリアシング）";
+      $("g3d").textContent = !p.p3 ? "予想が未記入" : p.p3 === "alias" ? "予想どおり" : "ずれ: 偽物の波ができる";
+    } else { $("g3s").textContent = "まだ確かめていない（fs を 8 より小さくする）"; $("g3d").textContent = "—"; }
+  }
+
+  // ── メモ・リセット ──
+  const note = $("note");
+  note.value = S.note;
+  note.addEventListener("input", () => { S.note = note.value; store.set("note", S.note); $("save-status").textContent = "保存した"; });
+  $("reset").addEventListener("click", () => {
+    if (!confirm("予想・チェック・メモをすべて消す。よい？")) return;
+    store.clear();
+    S.locked = false; S.pred = { p1: "", p2: "", p3: "" }; S.checks = { c1: false, c2: false, c3: false, c4: false }; S.note = "";
+    note.value = ""; fs = 32; nbits = 3; wave = "sine";
+    $("fs").value = 32; $("nb").value = 3; $("w-sine").classList.add("on"); $("w-voice").classList.remove("on");
+    seen.ok = false; seen.alias = false; seen.qmin = 4; seen.qmax = 1;
+    $("br-in").value = ""; $("br-msg").textContent = "";
+    applyPredUI(); update();
+  });
+
+  applyPredUI();
+  update();
+})();
+</script>
+</body>
+</html>
